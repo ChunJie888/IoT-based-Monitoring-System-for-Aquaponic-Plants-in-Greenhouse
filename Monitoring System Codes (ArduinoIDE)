@@ -11,7 +11,7 @@ const char* ssid = " your_wifi_id";
 const char* wifi_password = " your_wifi_password";
 
 // ================= MQTT =================
-const char* mqtt_server = "f8bd7c23ad0947b29af58cb06c6d4fc3.s1.eu.hivemq.cloud";
+const char* mqtt_server = " your_server_id.hivemq.cloud";
 const int mqtt_port = 8883;
 const char* mqtt_user = " your_username ";
 const char* mqtt_password = " your_password ";
