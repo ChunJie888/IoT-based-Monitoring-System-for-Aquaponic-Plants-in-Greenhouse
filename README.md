@@ -54,10 +54,12 @@ The ESP32C3 processes the data and:
 3. Layla Osman Sidahmed Mohamed
 
 # References
-1. Buyya, R., & Dastjerdi, A. V. (2016). Internet of Things: Principles and paradigms.
-2. Bahga, A., & Madisetti, V. (2014). Internet of Things: A hands-on approach.
-3. HiveMQ Documentation: https://www.hivemq.com/
-4. Node-RED Documentation: https://nodered.org/docs/
+1. Buyya, R., & Dastjerdi, A. V. (2016). Internet of Things: Principles and paradigms. Morgan Kaufmann. 
+2. Monk, S. (2017). Programming Arduino: Getting started with sketches (2nd ed.). McGraw-Hill Education. 
+3. Kurniawan, A. (2019). Internet of Things projects with ESP32. Packt Publishing. 
+4. Seeed Studio. (2025). Seeed Studio XIAO ESP32C3 documentation. Retrieved from https://wiki.seeedstudio.com/XIAO_ESP32C3_Getting_Started/ 
+5. Node-RED. (2025). Node-RED documentation. Retrieved from https://nodered.org/docs/ 
+6. Arduino. (2025). Arduino IDE documentation. Retrieved from https://docs.arduino.cc/software/ide/ 
 
 # License
 This project is developed for educational and academic purposes.
