@@ -1,0 +1,498 @@
+#include <Wire.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+#include <DHT20.h>
+#include <U8g2lib.h>
+#include <Adafruit_NeoPixel.h>
+
+// ================= WIFI =================
+const char* ssid = " your_wifi_id";
+const char* wifi_password = " your_wifi_password";
+
+// ================= MQTT =================
+const char* mqtt_server = "f8bd7c23ad0947b29af58cb06c6d4fc3.s1.eu.hivemq.cloud";
+const int mqtt_port = 8883;
+const char* mqtt_user = " your_username ";
+const char* mqtt_password = " your_password ";
+
+const char* mqtt_topic = "aquaponic/data";
+
+// ================= PINS =================
+#define TURBIDITY_PIN A1
+#define RGB_PIN D6
+#define NUM_LEDS 30
+
+// ================= OBJECTS =================
+WiFiClientSecure espClient;
+PubSubClient client(espClient);
+DHT20 dht20;
+
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(U8G2_R0, U8X8_PIN_NONE);
+Adafruit_NeoPixel strip(NUM_LEDS, RGB_PIN, NEO_GRB + NEO_KHZ800);
+
+// ================= COLORS =================
+uint32_t GREEN;
+uint32_t YELLOW;
+uint32_t RED;
+uint32_t WHITE;
+uint32_t BLUE;
+
+// ================= LED CONTROL =================
+bool ledManualMode = false;
+
+// ================= LED SEGMENT FUNCTION =================
+void setSegment(int startLED, int endLED, uint32_t color) {
+  for (int i = startLED; i <= endLED; i++) {
+    strip.setPixelColor(i, color);
+  }
+}
+
+// ================= COLOR STATUS FUNCTIONS =================
+uint32_t getTempColor(float temp) {
+  if (temp < 24 || temp > 33)
+    return RED;
+  else if (temp < 26 || temp > 30)
+    return YELLOW;
+  else
+    return GREEN;
+}
+
+uint32_t getHumidityColor(float hum) {
+  if (hum < 40 || hum > 80)
+    return RED;
+  else if (hum < 50 || hum > 70)
+    return YELLOW;
+  else
+    return GREEN;
+}
+
+uint32_t getTurbidityColor(float voltage) {
+  if (voltage > 3.0)
+    return RED;
+  else if (voltage > 2.5)
+    return YELLOW;
+  else
+    return GREEN;
+}
+
+// ================= TEXT STATUS FUNCTIONS =================
+String getTempStatus(float temp) {
+  if (temp < 24 || temp > 33)
+    return "Danger";
+  else if (temp < 26 || temp > 30)
+    return "Warning";
+  else
+    return "Normal";
+}
+
+String getTempAction(float temp) {
+  if (temp < 24)
+    return "Temperature too low. Use heater or reduce cooling.";
+  else if (temp > 33)
+    return "Temperature too high. Turn on fan or improve ventilation.";
+  else if (temp < 26)
+    return "Temperature slightly low. Monitor condition.";
+  else if (temp > 30)
+    return "Temperature slightly high. Monitor and improve airflow.";
+  else
+    return "Temperature normal. No action required.";
+}
+
+String getHumidityStatus(float hum) {
+  if (hum < 40 || hum > 80)
+    return "Danger";
+  else if (hum < 50 || hum > 70)
+    return "Warning";
+  else
+    return "Normal";
+}
+
+String getHumidityAction(float hum) {
+  if (hum < 40)
+    return "Humidity too low. Add misting or increase water exposure.";
+  else if (hum > 80)
+    return "Humidity too high. Improve ventilation.";
+  else if (hum < 50)
+    return "Humidity slightly low. Monitor greenhouse moisture.";
+  else if (hum > 70)
+    return "Humidity slightly high. Check airflow.";
+  else
+    return "Humidity normal. No action required.";
+}
+
+String getTurbidityStatus(float voltage) {
+  if (voltage > 3.0)
+    return "Danger";
+  else if (voltage > 2.5)
+    return "Warning";
+  else
+    return "Normal";
+}
+
+String getTurbidityAction(float voltage) {
+  if (voltage > 3.0)
+    return "Water turbidity too high. Check water quality and clean or filter the tank.";
+  else if (voltage > 2.5)
+    return "Water turbidity increasing. Monitor and prepare water treatment.";
+  else
+    return "Water clarity normal. No action required.";
+}
+
+// ================= MQTT CALLBACK =================
+void callback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+
+  String message = "";
+
+  for (int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+
+  message.trim();
+  Serial.println(message);
+
+  if (String(topic) == "aquaponic/lights") {
+
+    if (message == "1" || message == "true" || message == "ON" || message == "on") {
+      ledManualMode = true;
+      strip.fill(WHITE);
+      strip.show();
+      Serial.println("Manual LED ON");
+    }
+
+    else if (message == "0" || message == "false" || message == "OFF" || message == "off") {
+      ledManualMode = false;
+      strip.clear();
+      strip.show();
+      Serial.println("Manual LED OFF, back to auto mode");
+    }
+  }
+
+  if (String(topic) == "aquaponic/ledcolor") {
+
+    ledManualMode = true;
+
+    if (message == "red") {
+      strip.fill(RED);
+    }
+
+    else if (message == "green") {
+      strip.fill(GREEN);
+    }
+
+    else if (message == "yellow") {
+      strip.fill(YELLOW);
+    }
+
+    else if (message == "blue") {
+      strip.fill(BLUE);
+    }
+
+    else if (message == "white") {
+      strip.fill(WHITE);
+    }
+
+    else if (message == "off") {
+      ledManualMode = false;
+      strip.clear();
+    }
+
+    strip.show();
+  }
+}
+
+// ================= WIFI =================
+void connectWiFi() {
+  Serial.print("Connecting WiFi");
+
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  delay(1000);
+
+  WiFi.begin(ssid, wifi_password);
+
+  int attempts = 0;
+
+  while (WiFi.status() != WL_CONNECTED && attempts < 40) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi Connected!");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\nWiFi Failed!");
+  }
+}
+
+// ================= MQTT =================
+void connectMQTT() {
+
+  espClient.setInsecure();
+
+  client.setServer(mqtt_server, mqtt_port);
+  client.setCallback(callback);
+
+  while (!client.connected() && WiFi.status() == WL_CONNECTED) {
+
+    Serial.print("Connecting MQTT...");
+
+    String clientId = "XIAO_AQUA_";
+    clientId += String(random(0xffff), HEX);
+
+    if (client.connect(clientId.c_str(), mqtt_user, mqtt_password)) {
+
+      Serial.println("Connected!");
+
+      client.subscribe("aquaponic/lights");
+      client.subscribe("aquaponic/ledcolor");
+
+      Serial.println("Subscribed to aquaponic/lights");
+      Serial.println("Subscribed to aquaponic/ledcolor");
+
+    } else {
+
+      Serial.print("Failed rc=");
+      Serial.println(client.state());
+
+      delay(3000);
+    }
+  }
+}
+
+// ================= OLED =================
+void displayOLED(float temp, float hum, float turbVolt) {
+
+  oled.clearBuffer();
+
+  oled.setFont(u8g2_font_6x10_tf);
+
+  oled.setCursor(0, 12);
+  oled.print("Aquaponic Monitor");
+
+  oled.setCursor(0, 28);
+  oled.print("Temp: ");
+  oled.print(temp, 1);
+  oled.print(" C");
+
+  oled.setCursor(0, 42);
+  oled.print("Hum : ");
+  oled.print(hum, 1);
+  oled.print(" %");
+
+  oled.setCursor(0, 56);
+  oled.print("Turb: ");
+  oled.print(turbVolt, 2);
+  oled.print("V");
+
+  oled.sendBuffer();
+}
+
+// ================= SETUP =================
+void setup() {
+
+  Serial.begin(115200);
+  delay(2000);
+
+  Serial.println("System Start");
+
+  Wire.begin();
+
+  oled.begin();
+  oled.clearBuffer();
+  oled.setFont(u8g2_font_6x10_tf);
+  oled.setCursor(0, 20);
+  oled.print("Starting...");
+  oled.sendBuffer();
+
+  if (!dht20.begin()) {
+
+    Serial.println("DHT20 NOT FOUND");
+
+    oled.setCursor(0, 40);
+    oled.print("DHT20 ERROR");
+    oled.sendBuffer();
+
+    while (1);
+  }
+
+  Serial.println("DHT20 Ready");
+
+  analogReadResolution(12);
+
+  strip.begin();
+  strip.show();
+
+  GREEN = strip.Color(0, 255, 0);
+  YELLOW = strip.Color(255, 150, 0);
+  RED = strip.Color(255, 0, 0);
+  WHITE = strip.Color(255, 255, 255);
+  BLUE = strip.Color(0, 0, 255);
+
+  for (int i = 0; i < NUM_LEDS; i++) {
+    strip.setPixelColor(i, GREEN);
+  }
+
+  strip.show();
+  delay(1000);
+
+  strip.clear();
+  strip.show();
+
+  connectWiFi();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    connectMQTT();
+  }
+
+  oled.clearBuffer();
+  oled.setCursor(0, 20);
+  oled.print("System Ready");
+  oled.sendBuffer();
+
+  delay(2000);
+}
+
+// ================= LOOP =================
+void loop() {
+
+  if (WiFi.status() == WL_CONNECTED) {
+
+    if (!client.connected()) {
+      connectMQTT();
+    }
+
+    client.loop();
+  }
+
+  int status = dht20.read();
+
+  if (status != DHT20_OK) {
+
+    Serial.print("DHT20 Error: ");
+    Serial.println(status);
+
+    delay(3000);
+    return;
+  }
+
+  float temperature = dht20.getTemperature();
+  float humidity = dht20.getHumidity();
+
+  int turbidityRaw = analogRead(TURBIDITY_PIN);
+  float turbidityVoltage = turbidityRaw * (3.3 / 4095.0);
+
+  String tempStatus = getTempStatus(temperature);
+  String tempAction = getTempAction(temperature);
+
+  String humidityStatus = getHumidityStatus(humidity);
+  String humidityAction = getHumidityAction(humidity);
+
+  String turbidityStatus = getTurbidityStatus(turbidityVoltage);
+  String turbidityAction = getTurbidityAction(turbidityVoltage);
+
+  displayOLED(temperature, humidity, turbidityVoltage);
+
+  // ===== AUTO LED MODE =====
+  if (ledManualMode == false) {
+
+    setSegment(0, 9, getTempColor(temperature));
+    setSegment(10, 19, getHumidityColor(humidity));
+    setSegment(20, 29, getTurbidityColor(turbidityVoltage));
+
+    strip.show();
+  }
+
+  // ===== SERIAL MONITOR =====
+  Serial.println("\n=== SENSOR DATA ===");
+
+  Serial.print("Temperature: ");
+  Serial.print(temperature, 1);
+  Serial.print(" C | ");
+  Serial.println(tempStatus);
+  Serial.println(tempAction);
+
+  Serial.print("Humidity: ");
+  Serial.print(humidity, 1);
+  Serial.print(" % | ");
+  Serial.println(humidityStatus);
+  Serial.println(humidityAction);
+
+  Serial.print("Turbidity ADC: ");
+  Serial.println(turbidityRaw);
+
+  Serial.print("Turbidity Voltage: ");
+  Serial.print(turbidityVoltage, 3);
+  Serial.print(" V | ");
+  Serial.println(turbidityStatus);
+  Serial.println(turbidityAction);
+
+  Serial.print("LED Mode: ");
+  if (ledManualMode) {
+    Serial.println("Manual");
+  } else {
+    Serial.println("Auto");
+  }
+
+  // ===== MQTT JSON PAYLOAD =====
+  String payload = "{";
+
+  payload += "\"temperature\":";
+  payload += String(temperature, 1);
+
+  payload += ",\"temperature_status\":\"";
+  payload += tempStatus;
+  payload += "\"";
+
+  payload += ",\"temperature_action\":\"";
+  payload += tempAction;
+  payload += "\"";
+
+  payload += ",\"humidity\":";
+  payload += String(humidity, 1);
+
+  payload += ",\"humidity_status\":\"";
+  payload += humidityStatus;
+  payload += "\"";
+
+  payload += ",\"humidity_action\":\"";
+  payload += humidityAction;
+  payload += "\"";
+
+  payload += ",\"turbidity_raw\":";
+  payload += turbidityRaw;
+
+  payload += ",\"turbidity_voltage\":";
+  payload += String(turbidityVoltage, 3);
+
+  payload += ",\"turbidity_status\":\"";
+  payload += turbidityStatus;
+  payload += "\"";
+
+  payload += ",\"turbidity_action\":\"";
+  payload += turbidityAction;
+  payload += "\"";
+
+  payload += ",\"led_mode\":\"";
+  payload += ledManualMode ? "manual" : "auto";
+  payload += "\"";
+
+  payload += "}";
+
+  if (WiFi.status() == WL_CONNECTED && client.connected()) {
+
+    client.publish(mqtt_topic, payload.c_str());
+
+    Serial.println("MQTT Sent");
+    Serial.println(payload);
+  }
+
+  Serial.println("====================");
+
+  delay(3000);
+}
