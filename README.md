@@ -53,7 +53,7 @@ The ESP32C3 processes the data and:
 2. Poh Yu Wei
 3. Layla Osman Sidahmed Mohamed
 
-## References
+# References
 1. Buyya, R., & Dastjerdi, A. V. (2016). Internet of Things: Principles and paradigms.
 2. Bahga, A., & Madisetti, V. (2014). Internet of Things: A hands-on approach.
 3. HiveMQ Documentation: https://www.hivemq.com/
